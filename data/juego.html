@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego del Dinosaurio</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(to bottom, #87CEEB, #98D8C8);
+            font-family: 'Courier New', monospace;
+        }
+        
+        #gameContainer {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        canvas {
+            border: 3px solid #333;
+            border-radius: 10px;
+            background: #FFF;
+            cursor: pointer;
+        }
+        
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #333;
+        }
+        
+        #gameOver {
+            display: none;
+            font-size: 20px;
+            color: #ff4444;
+            margin: 10px 0;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            font-size: 16px;
+            color: #666;
+        }
+        
+        button {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <h1>🦕 Juego del Dinosaurio 🦕</h1>
+        <div id="score">Puntuación: 0</div>
+        <div id="gameOver">¡Game Over! Presiona ESPACIO para reiniciar</div>
+        <canvas id="gameCanvas" width="800" height="300"></canvas>
+        <div class="controls">
+            <p>Presiona ESPACIO o haz clic para saltar</p>
+            <button onclick="togglePause()">Pausar/Reanudar</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverElement = document.getElementById('gameOver');
+
+        // Variables del juego
+        let score = 0;
+        let highScore = 0;
+        let gameSpeed = 6;
+        let gravity = 0.8;
+        let isGameOver = false;
+        let isPaused = false;
+        let clouds = [];
+        let particles = [];
+
+        // Dinosaurio
+        const dino = {
+            x: 50,
+            y: 200,
+            width: 40,
+            height: 60,
+            velocityY: 0,
+            jumpPower: -15,
+            isJumping: false,
+            legAnimation: 0
+        };
+
+        // Array de obstáculos
+        let obstacles = [];
+
+        // Clase para obstáculos
+        class Obstacle {
+            constructor() {
+                this.width = 30 + Math.random() * 20;
+                this.height = 50 + Math.random() * 30;
+                this.x = canvas.width;
+                this.y = canvas.height - this.height - 40;
+                this.color = `hsl(${120 + Math.random() * 40}, 70%, 40%)`;
+            }
+
+            update() {
+                this.x -= gameSpeed;
+            }
+
+            draw() {
+                // Dibujar cactus con más detalle
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Brazos del cactus
+                if (this.height > 60) {
+                    ctx.fillRect(this.x - 10, this.y + 20, 15, 20);
+                    ctx.fillRect(this.x + this.width - 5, this.y + 15, 15, 20);
+                }
+                
+                // Espinas
+                ctx.fillStyle = '#2d5016';
+                for (let i = 0; i < 5; i++) {
+                    ctx.fillRect(
+                        this.x + Math.random() * this.width, 
+                        this.y + Math.random() * this.height, 
+                        2, 2
+                    );
+                }
+            }
+        }
+
+        // Clase para nubes
+        class Cloud {
+            constructor() {
+                this.x = canvas.width + Math.random() * 200;
+                this.y = 20 + Math.random() * 100;
+                this.speed = 1 + Math.random() * 2;
+                this.size = 30 + Math.random() * 20;
+            }
+
+            update() {
+                this.x -= this.speed;
+                if (this.x < -100) {
+                    this.x = canvas.width + Math.random() * 200;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                // Dibujar nube con círculos
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.arc(this.x + this.size, this.y, this.size * 0.8, 0, Math.PI * 2);
+                ctx.arc(this.x - this.size * 0.5, this.y, this.size * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Clase para partículas
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.random() * 4 - 2;
+                this.vy = Math.random() * -5 - 2;
+                this.life = 1;
+                this.color = `hsl(${30 + Math.random() * 30}, 70%, 50%)`;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.2;
+                this.life -= 0.02;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.life;
+                ctx.fillRect(this.x, this.y, 4, 4);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Inicializar nubes
+        for (let i = 0; i < 3; i++) {
+            clouds.push(new Cloud());
+        }
+
+        // Función para dibujar el dinosaurio
+        function drawDino() {
+            ctx.fillStyle = '#555';
+            
+            // Cuerpo
+            ctx.fillRect(dino.x, dino.y, dino.width, dino.height * 0.7);
+            
+            // Cabeza
+            ctx.fillRect(dino.x + dino.width * 0.7, dino.y - dino.height * 0.2, 
+                        dino.width * 0.5, dino.height * 0.5);
+            
+            // Ojo
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(dino.x + dino.width * 0.8, dino.y - dino.height * 0.1, 5, 5);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(dino.x + dino.width * 0.82, dino.y - dino.height * 0.08, 3, 3);
+            
+            // Cola
+            ctx.fillStyle = '#555';
+            ctx.beginPath();
+            ctx.moveTo(dino.x, dino.y + dino.height * 0.3);
+            ctx.lineTo(dino.x - 15, dino.y + dino.height * 0.1);
+            ctx.lineTo(dino.x, dino.y + dino.height * 0.5);
+            ctx.fill();
+            
+            // Piernas con animación
+            if (!dino.isJumping) {
+                dino.legAnimation += 0.3;
+                const legOffset = Math.sin(dino.legAnimation) * 5;
+                
+                // Pierna 1
+                ctx.fillRect(dino.x + 5, dino.y + dino.height * 0.7, 
+                            8, dino.height * 0.3 + legOffset);
+                // Pierna 2
+                ctx.fillRect(dino.x + dino.width - 13, dino.y + dino.height * 0.7, 
+                            8, dino.height * 0.3 - legOffset);
+            } else {
+                // Piernas extendidas al saltar
+                ctx.fillRect(dino.x + 5, dino.y + dino.height * 0.7, 8, dino.height * 0.3);
+                ctx.fillRect(dino.x + dino.width - 13, dino.y + dino.height * 0.7, 8, dino.height * 0.3);
+            }
+        }
+
+        // Función para dibujar el suelo
+        function drawGround() {
+            ctx.strokeStyle = '#8B4513';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - 40);
+            ctx.lineTo(canvas.width, canvas.height - 40);
+            ctx.stroke();
+            
+            // Detalles del suelo
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(i, canvas.height - 40);
+                ctx.lineTo(i + 10, canvas.height - 35);
+                ctx.stroke();
+            }
+        }
+
+        // Función para saltar
+        function jump() {
+            if (!dino.isJumping && !isGameOver && !isPaused) {
+                dino.velocityY = dino.jumpPower;
+                dino.isJumping = true;
+                
+                // Crear partículas al saltar
+                for (let i = 0; i < 5; i++) {
+                    particles.push(new Particle(dino.x + dino.width/2, dino.y + dino.height));
+                }
+            }
+        }
+
+        // Función para detectar colisiones
+        function checkCollision() {
+            for (let obstacle of obstacles) {
+                if (dino.x < obstacle.x + obstacle.width &&
+                    dino.x + dino.width > obstacle.x &&
+                    dino.y < obstacle.y + obstacle.height &&
+                    dino.y + dino.height > obstacle.y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Función para actualizar el juego
+        function update() {
+            if (isGameOver || isPaused) return;
+
+            // Actualizar dinosaurio
+            dino.velocityY += gravity;
+            dino.y += dino.velocityY;
+
+            // Limitar al suelo
+            if (dino.y > 200) {
+                dino.y = 200;
+                dino.velocityY = 0;
+                dino.isJumping = false;
+            }
+
+            // Actualizar obstáculos
+            obstacles = obstacles.filter(obstacle => {
+                obstacle.update();
+                return obstacle.x > -obstacle.width;
+            });
+
+            // Generar nuevos obstáculos
+            if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - 300) {
+                if (Math.random() < 0.02) {
+                    obstacles.push(new Obstacle());
+                }
+            }
+
+            // Actualizar nubes
+            clouds.forEach(cloud => cloud.update());
+
+            // Actualizar partículas
+            particles = particles.filter(particle => {
+                particle.update();
+                return particle.life > 0;
+            });
+
+            // Incrementar puntuación
+            score++;
+            if (score > highScore) {
+                highScore = score;
+            }
+
+            // Aumentar velocidad gradualmente
+            if (score % 500 === 0) {
+                gameSpeed += 0.5;
+            }
+
+            // Verificar colisiones
+            if (checkCollision()) {
+                gameOver();
+            }
+        }
+
+        // Función de game over
+        function gameOver() {
+            isGameOver = true;
+            gameOverElement.style.display = 'block';
+        }
+
+        // Función para reiniciar el juego
+        function restart() {
+            score = 0;
+            gameSpeed = 6;
+            obstacles = [];
+            particles = [];
+            dino.y = 200;
+            dino.velocityY = 0;
+            dino.isJumping = false;
+            isGameOver = false;
+            isPaused = false;
+            gameOverElement.style.display = 'none';
+        }
+
+        // Función para dibujar
+        function draw() {
+            // Limpiar canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar fondo degradado
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#F0E68C');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar nubes
+            clouds.forEach(cloud => cloud.draw());
+
+            // Dibujar suelo
+            drawGround();
+
+            // Dibujar obstáculos
+            obstacles.forEach(obstacle => obstacle.draw());
+
+            // Dibujar partículas
+            particles.forEach(particle => particle.draw());
+
+            // Dibujar dinosaurio
+            drawDino();
+
+            // Actualizar puntuación
+            scoreElement.textContent = `Puntuación: ${Math.floor(score/10)} | Mejor: ${Math.floor(highScore/10)}`;
+
+            // Mostrar estado de pausa
+            if (isPaused && !isGameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#FFF';
+                ctx.font = '48px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('PAUSADO', canvas.width/2, canvas.height/2);
+                ctx.textAlign = 'left';
+            }
+        }
+
+        // Función principal del juego
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Función para pausar/reanudar
+        function togglePause() {
+            if (!isGameOver) {
+                isPaused = !isPaused;
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (isGameOver) {
+                    restart();
+                } else {
+                    jump();
+                }
+            }
+        });
+
+        canvas.addEventListener('click', () => {
+            if (isGameOver) {
+                restart();
+            } else {
+                jump();
+            }
+        });
+
+        // Iniciar el juego
+        gameLoop();
+    </script>
+</body>
+</html>
